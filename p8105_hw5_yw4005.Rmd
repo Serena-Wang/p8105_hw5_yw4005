@@ -51,7 +51,8 @@ baltimore_unsolved_test <-
     pull(total_number_of_homicides))
 
 baltimore_unsolved_test %>% 
-  tidy()
+  tidy() %>%
+  knitr::kable(digits = 5)
 ```
 With  95% confidence level, estimated proportion is 0.6455607 and estimated confidence interval is (0.6275625, 0.6631599).
 
