@@ -1,0 +1,86 @@
+---
+title: "P8105 HW5"
+author: "Yijin Serena Wang"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r, message = FALSE}
+library(tidyverse)
+library(purrr)
+library(readr)
+library(janitor)
+library(broom)
+library(stats)
+library(ggplot2)
+```
+
+
+## Problem 1
+```{r}
+file_paths <- list.files("./data", full.names = TRUE)
+participant_data <- map_dfr(file_paths, read_csv)
+```
+## Problem 2
+
+The raw data contains information about criminal homicides in the last 10 years in the US. It includes 52179 observations. They have victim's information, specific location of homicide, whether an arrest was made.
+```{r}
+homicide_data <- read_csv("./p2_data/homicide-data.csv") %>%
+  mutate(city_state = paste0(city, ", ", state)) %>%
+  clean_names() 
+```
+
+```{r}
+homicide_summary <- homicide_data %>%
+  group_by(city_state) %>%
+  summarise(total_number_of_homicides = n(),
+            number_of_unsolved_homicides = sum(disposition %in% c("Closed without arrest", "Open/No arrest"))) 
+
+homicide_summary %>%
+  knitr::kable(digits = 1)
+```
+
+```{r baltimore_prop}
+baltimore_unsolved_test <- 
+  prop.test(
+  x = homicide_summary %>% 
+    filter(city_state == "Baltimore, MD") %>%
+    pull(number_of_unsolved_homicides),
+  n = homicide_summary %>% 
+    filter(city_state == "Baltimore, MD") %>%
+    pull(total_number_of_homicides))
+
+baltimore_unsolved_test %>% 
+  tidy()
+```
+With  95% confidence level, estimated proportion is 0.6455607 and estimated confidence interval is (0.6275625, 0.6631599).
+
+```{r all_prop}
+prop_test_results <- map2(
+  .y  = homicide_summary$total_number_of_homicides,
+  .x = homicide_summary$number_of_unsolved_homicides,
+  ~prop.test(x = .x, n = .y) %>%
+    tidy()
+)
+
+prop_test_results <- homicide_summary %>%
+  mutate(results = prop_test_results) %>%
+  unnest(results)
+```
+
+```{r}
+head(prop_test_results) %>%
+  knitr::kable(digits = 3)
+  
+```
+
+```{r error_bar_plot}
+prop_test_results %>%
+  ggplot(aes(group = city_state, x = reorder(city_state, estimate))) + 
+  geom_point(aes(y = estimate)) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  labs(x = "City state", y = "Estimated % of unsolved homicides")
+  
+```
+
