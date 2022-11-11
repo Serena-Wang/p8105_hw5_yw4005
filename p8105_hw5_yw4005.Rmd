@@ -17,10 +17,46 @@ library(ggplot2)
 
 
 ## Problem 1
-```{r}
-file_paths <- list.files("./data", full.names = TRUE)
-participant_data <- map_dfr(file_paths, read_csv)
+```{r, message = FALSE}
+file_paths <- list.files("./p1_data", full.names = TRUE)
+participant_data <- tibble(file_name = str_replace(file_paths, "./p1_data/","")) %>%
+  mutate(data = map(.x = file_paths, ~read_csv(file = .x)))
 ```
+
+```{r}
+participant_data <- participant_data %>%
+  mutate(file_name = str_replace(file_name, ".csv","")) %>%
+  unnest(data) %>%
+  clean_names() %>%
+  separate(col = c(file_name),
+           sep = "_",
+           into = c("arm", "id")) %>%
+  mutate(arm  = ifelse(arm == "exp", "experimental", "control")) %>%
+  pivot_longer(cols = starts_with("week_"),
+               names_to = "week",
+               values_to = "value") %>%
+  mutate(week = str_replace(week, "week_",""),
+         week = as.numeric(week))
+```
+
+```{r}
+head(participant_data)
+```
+
+
+```{r spaghetti plot}
+participant_data %>%
+  ggplot(aes(x = week, y = value, color = interaction(id, arm))) +
+  geom_line() +
+  facet_grid(.~arm) +
+  theme(legend.position = "bottom")+
+  labs(color = "id with arm",
+       title = "Comparison of weekly observation in each arm")
+
+```
+
+All subjects in the experimental arm have a clear upward trend in their weekly measurement over time. On the other hand, all subjects in the control arm have small fluctuations around their initial measurement.
+
 ## Problem 2
 
 The raw data contains information about criminal homicides in the last 10 years in the US. It includes 52179 observations. They have victim's information, specific location of homicide, whether an arrest was made.
@@ -83,5 +119,52 @@ prop_test_results %>%
   theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
   labs(x = "City state", y = "Estimated % of unsolved homicides")
   
+```
+
+
+## Problem 3
+
+```{r}
+set.seed(1)
+n <- 30
+sigma <-  5
+mu  <- 0
+```
+
+```{r}
+sim_normal <- function(n, mu, sigma) {
+  
+  sim_data = tibble(
+    x = rnorm(n, mean = mu, sd = sigma),
+  )
+  
+  sim_data %>% 
+    summarize(
+      mu_hat = mean(x),
+      p_value = t.test(x, mu = 0, conf.level = 1-0.05) %>%
+        tidy() %>%
+        pull(p.value)
+    )
+}
+```
+
+```{r}
+sim_results_df = 
+  expand_grid(
+    sample_size = n,
+    sigma = sigma,
+    mu =  mu,
+    iter = 1:5000
+  ) %>% 
+  mutate(
+    estimate_df = pmap(list(sample_size, mu, sigma), sim_normal)
+  ) %>% 
+  unnest(estimate_df)
+```
+
+```{r}
+mu <- 1:6
+
+
 ```
 
