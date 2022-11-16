@@ -17,12 +17,16 @@ library(ggplot2)
 
 
 ## Problem 1
+
+Find all available csv files in p1_data folder and load them all. 
 ```{r, message = FALSE}
 file_paths <- list.files("./p1_data", full.names = TRUE)
 participant_data <- tibble(file_name = str_replace(file_paths, "./p1_data/","")) %>%
   mutate(data = map(.x = file_paths, ~read_csv(file = .x)))
 ```
-
+Clean up the data set:
+1. Split the full file name into only arm_id, then split it into separate columns for arm and id.
+2. Pivot the data frame so that each row is for a weekly observation for a participant on a specific arm.
 ```{r}
 participant_data <- participant_data %>%
   mutate(file_name = str_replace(file_name, ".csv","")) %>%
@@ -43,7 +47,7 @@ participant_data <- participant_data %>%
 head(participant_data)
 ```
 
-
+Plot all weekly readings and color it by arm and id number
 ```{r spaghetti plot}
 participant_data %>%
   ggplot(aes(x = week, y = value, color = interaction(id, arm))) +
@@ -60,12 +64,14 @@ All subjects in the experimental arm have a clear upward trend in their weekly m
 ## Problem 2
 
 The raw data contains information about criminal homicides in the last 10 years in the US. It includes 52179 observations. They have victim's information, specific location of homicide, whether an arrest was made.
+
+Save the data to a local path and create a city state column by merging the city and state columns.
 ```{r}
 homicide_data <- read_csv("./p2_data/homicide-data.csv") %>%
   mutate(city_state = paste0(city, ", ", state)) %>%
   clean_names() 
 ```
-
+Count number of homicides and unsolved_homicides forr each city state.
 ```{r}
 homicide_summary <- homicide_data %>%
   group_by(city_state) %>%
@@ -75,7 +81,7 @@ homicide_summary <- homicide_data %>%
 homicide_summary %>%
   knitr::kable(digits = 1)
 ```
-
+Run prop.test for Baltimore only.
 ```{r baltimore_prop}
 baltimore_unsolved_test <- 
   prop.test(
@@ -88,16 +94,19 @@ baltimore_unsolved_test <-
 
 baltimore_unsolved_test %>% 
   tidy() %>%
+  select(estimate, conf.low, conf.high) %>%
   knitr::kable(digits = 5)
 ```
-With  95% confidence level, estimated proportion is 0.6455607 and estimated confidence interval is (0.6275625, 0.6631599).
+With 95% confidence level, estimated proportion is 0.6455607 and estimated confidence interval is (0.6275625, 0.6631599).
 
+Run prop test on all city states
 ```{r all_prop}
 prop_test_results <- map2(
   .y  = homicide_summary$total_number_of_homicides,
   .x = homicide_summary$number_of_unsolved_homicides,
-  ~prop.test(x = .x, n = .y) %>%
-    tidy()
+  ~prop.test(x = .x, n = .y) %>% 
+    tidy() %>% 
+    select(estimate, conf.low, conf.high)
 )
 
 prop_test_results <- homicide_summary %>%
@@ -112,41 +121,44 @@ head(prop_test_results) %>%
   knitr::kable(digits = 3)
   
 ```
-
+Plot estimate and 95% confidence interval of proportion of unsolved homicides
 ```{r error_bar_plot}
 prop_test_results %>%
   ggplot(aes(group = city_state, x = reorder(city_state, estimate))) + 
   geom_point(aes(y = estimate)) +
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high)) +
   theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
-  labs(x = "City state", y = "Estimated % of unsolved homicides")
+  labs(x = "City state", 
+       y = "Estimated % of unsolved homicides",
+       title = "Unsolved homicides: estimates and 95% CI")
   
 ```
 
 
 ## Problem 3
 
+Set seed
 ```{r}
 set.seed(10)
 ```
 
+Create a function for:
+1. Generate a sample of size 30 from normal distribution with specified mean and sd = 5.
+2. Run a t test on the sample with 95% confidence level, and extract estimate for mu and p_value
 ```{r}
 sim_normal_t_test <- function(mu) {
   
-  sim_data = tibble(
-    x = rnorm(30, mean = mu, sd = 5),
-  )
-  
-  sim_data %>% 
-    summarize(
-      mu_hat = mean(x),
-      p_value = t.test(x, conf.level = 1-0.05) %>%
-        tidy() %>%
-        pull( p.value)
-    )
+  sample = rnorm(30, mean = mu, sd = 5)
+
+  test_result <- t.test(sample, conf.level = 1-0.05) %>%
+    tidy() %>%
+    select(estimate, p.value) %>%
+    rename(p_value = p.value,
+           mu_hat = estimate)
 }
 ```
 
+Generate 5000 samples of size 30 with mu = 0. Then run t-test of every sample.
 ```{r}
 sim_results_df = 
   expand_grid(
@@ -158,7 +170,7 @@ sim_results_df =
   ) %>% 
   unnest(estimate_df)
 ```
-
+For each mu (from 1 to 6), generate 5000 samples of size 30. Then run t-test of every sample.
 ```{r}
 mu <- 1:6
 sim_results_mu_df = 
@@ -172,6 +184,7 @@ sim_results_mu_df =
   unnest(estimate_df)
 ```
 
+Summarize the total number of samples and samples that reject the null in t test. Then, plot rejection rate against true mu value.
 ```{r}
 sim_results_mu_df %>%
   group_by(mu) %>%
@@ -179,19 +192,41 @@ sim_results_mu_df %>%
             reject_count = sum(p_value < 0.05),
             reject_rate = reject_count/total_count) %>%
   ggplot(aes(x = mu, y = reject_rate)) +
-  geom_bar(stat = "identity")
+  geom_bar(stat = "identity") +
+  labs(
+    x = "true mu",
+    y = "rejection rate",
+    title = "relationship between true mu and rejection rate"
+  )
 
 ```
+As the true mu increases, rejection rate grows as well. In other words, power grows as effect size grows.
 
-
+for each mu, calculate the average mu hat for all samples created and average mu hat for samples that reject the null in t-tests. Plot two averages against the true mu value. 
 ```{r}
-sim_results_mu_df %>%
-  filter (p_value < 0.05) %>%
+sim_results_all_sample_mu_avg <- sim_results_mu_df %>%
   group_by(mu) %>%
-  summarise(avg_mu_hat = mean(mu_hat)) %>%
-  ggplot(aes(x = mu, y = avg_mu_hat, group = mu)) +
-  geom_bar(stat = "identity")
+  summarise(avg_mu_hat = mean(mu_hat),
+            sample = "all samples") 
+
+sim_results_mu_avg_comparison <- sim_results_mu_df %>%
+  filter(p_value < 0.05) %>%
+  group_by(mu) %>%
+  summarise(avg_mu_hat = mean(mu_hat),
+            sample = "samples that reject the null") %>%
+  rbind(sim_results_all_sample_mu_avg)
+  
+
+sim_results_mu_avg_comparison %>%
+  ggplot(aes(x = mu, y = avg_mu_hat, color = sample), group = sample) +
+  geom_point()+
+  geom_line() +
+  labs(
+    x = "true mu",
+    y = "sample average mu hat",
+    title = "relationship between true mu and sample average mu hat"
+  )
   
 
 ```
-
+As the true mu increases, sample average mu hat increases as well. Average mu hat of samples that reject the null are very close the true mu when the true mu is 4, 5, 6. When the true mu is less than 4, mu hat of samples that reject the null are larger than the true mu.
