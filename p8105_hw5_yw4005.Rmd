@@ -67,7 +67,11 @@ The raw data contains information about criminal homicides in the last 10 years 
 
 Save the data to a local path and create a city state column by merging the city and state columns.
 ```{r}
-homicide_data <- read_csv("./p2_data/homicide-data.csv") %>%
+homicide_data <- read_csv("./p2_data/homicide-data.csv") 
+
+homicide_data[homicide_data$city == "Tulsa", ]$state <- "OK"
+
+homicide_data <- homicide_data %>%
   mutate(city_state = paste0(city, ", ", state)) %>%
   clean_names() 
 ```
@@ -97,7 +101,7 @@ baltimore_unsolved_test %>%
   select(estimate, conf.low, conf.high) %>%
   knitr::kable(digits = 5)
 ```
-With 95% confidence level, estimated proportion is 0.6455607 and estimated confidence interval is (0.6275625, 0.6631599).
+With 95% confidence level, estimated proportion is 0.64556 and estimated confidence interval is (0.62756, 0.66316).
 
 Run prop test on all city states
 ```{r all_prop}
@@ -111,10 +115,9 @@ prop_test_results <- map2(
 
 prop_test_results <- homicide_summary %>%
   mutate(results = prop_test_results) %>%
-  unnest(results) %>%
-  filter(city_state != "Tulsa, AL")
+  unnest(results) 
 ```
-Take out Tulsa, AL because there was no unsolved homicides. So the numerator of the ratio is 0.
+
 
 ```{r}
 head(prop_test_results) %>%
@@ -150,7 +153,7 @@ sim_normal_t_test <- function(mu) {
   
   sample = rnorm(30, mean = mu, sd = 5)
 
-  test_result <- t.test(sample, conf.level = 1-0.05) %>%
+  t.test(sample, conf.level = 1-0.05) %>%
     tidy() %>%
     select(estimate, p.value) %>%
     rename(p_value = p.value,
@@ -171,18 +174,17 @@ sim_results_df =
   unnest(estimate_df)
 ```
 For each mu (from 1 to 6), generate 5000 samples of size 30. Then run t-test of every sample.
+
 ```{r}
-mu <- 1:6
-sim_results_mu_df = 
-  expand_grid(
-    mu =  mu,
-    iter = 1:5000
-  ) %>% 
-  mutate(
-    estimate_df = map(mu, sim_normal_t_test)
-  ) %>% 
-  unnest(estimate_df)
+sim_results_mu_df <- 
+  tibble(mu = c(1:6)) %>%
+  mutate(test_result_list = map(.x = mu, 
+                                ~rerun(5000, sim_normal_t_test(mu = .x))),
+         test_result = map(test_result_list, bind_rows)) %>%
+  unnest(test_result) %>%
+  select(-test_result_list)
 ```
+
 
 Summarize the total number of samples and samples that reject the null in t test. Then, plot rejection rate against true mu value.
 ```{r}
@@ -200,9 +202,10 @@ sim_results_mu_df %>%
   )
 
 ```
-As the true mu increases, rejection rate grows as well. In other words, power grows as effect size grows.
 
-for each mu, calculate the average mu hat for all samples created and average mu hat for samples that reject the null in t-tests. Plot two averages against the true mu value. 
+Effect size is the difference between the true mu and the null value in t-test. As the true mu increases, rejection rate grows as well. In other words, power grows as effect size grows.
+
+For each mu, calculate the average mu hat for all samples created and average mu hat for samples that reject the null in t-tests. Plot two averages against the true mu value. 
 ```{r}
 sim_results_all_sample_mu_avg <- sim_results_mu_df %>%
   group_by(mu) %>%
@@ -229,4 +232,7 @@ sim_results_mu_avg_comparison %>%
   
 
 ```
-As the true mu increases, sample average mu hat increases as well. Average mu hat of samples that reject the null are very close the true mu when the true mu is 4, 5, 6. When the true mu is less than 4, mu hat of samples that reject the null are larger than the true mu.
+
+As the true mu increases, sample average mu hat increases as well. Average mu hat of samples that reject the null are very close to the true mu when the true mu is 4, 5, 6. When the true mu is less than 4, mu hat of samples that reject the null are larger than the true mu. 
+
+This is because these samples come from a normal distribution whose true mean is very different from the null value of 0. And the rejection rate increases as true mean increases. Therefore, these samples would reject the null in t-test and the average mu hat would be around the true mu. 
